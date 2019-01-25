@@ -4,6 +4,9 @@ import requests
 import re
 import json
 
+from tools_wyy import MongoHelper
+
+
 '''
 url="https://music.163.com/playlist?id=2584113381"
 html_str = parse_url(url)
@@ -20,6 +23,7 @@ class WyySpider:
         self.url = "https://music.163.com/playlist?id=2498061427"  # 一个歌单的url
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"}
+        self.mongo_db = MongoHelper(db="wangyiyun", collection="wyy")
 
     def parse_url(self, url):
         response = requests.get(url, headers=self.headers)
@@ -40,7 +44,11 @@ class WyySpider:
         item['作者'] = html_str_etree.xpath("//a[@class='u-btni u-btni-share ']/@data-res-author")[0]
         item['歌曲数量'] = html_str_etree.xpath("//span[@id='playlist-track-count']/text()")[0]
         song_name_tmp = html_str_etree.xpath("//ul[@class='f-hide']/li/a/text()")
+
         song_name_tmp = [re.sub(r'\xa0', ' ', i) for i in song_name_tmp]  # 替换里面的不间断字符(\xa0):&nbsp,空格：\x20
+        song_name_tmp = [re.sub(r'\xa0', ' ', i).strip() for i in song_name_tmp]  # 替换里面的不间断字符(\xa0):&nbsp,空格：\x20
+        song_name_tmp = [re.sub(r'\.', ' ', i) for i in song_name_tmp]  # 替换里面的"."为空格字符 因为mongo不支持键含有点(.)
+
         song_href_tmp = html_str_etree.xpath("//ul[@class='f-hide']/li/a/@href")  # https://music.163.com
         song_href_tmp = ["https://music.163.com" + i for i in song_href_tmp]
         song_list = {i: song_href_tmp[song_name_tmp.index(i)] for i in song_name_tmp}
@@ -61,20 +69,40 @@ class WyySpider:
         tmp2 = item['script_detail']
         # print(str(tmp2))
         tmp2_dict = json.loads(tmp2)
+
         for k in tmp2_dict:
             print(k+':',tmp2_dict[k])
+
         return item
 
     def save_json_data(self, json_data):
         with open("1.json", "w", encoding="utf-8") as f:
             f.write(json.dumps(json_data, ensure_ascii=0, indent=2))
 
+
+    def save_json_to_db(self, json_data):
+        self.mongo_db.insert_one(json_data)
+        print("保存完毕")
+
+    def db_find(self):
+        self.mongo_db.find()
+
+
     def run(self):
         html_str = self.parse_url(self.url)
         song_sheet = self.get_song_sheet(html_str)
+
         #self.save_json_data(song_sheet)
+
+        print(song_sheet)
+        # self.save_json_data(song_sheet)
+        self.save_json_to_db(song_sheet)
+
 
 
 if __name__ == '__main__':
     wyy = WyySpider()
-    wyy.run()
+    # wyy.run()
+
+    # wyy.save_json_to_db(data)
+    wyy.db_find()
