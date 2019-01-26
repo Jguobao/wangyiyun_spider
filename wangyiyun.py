@@ -4,46 +4,64 @@ import requests
 import re
 import json
 from tools_wyy import MongoHelper
+from settings import Settings
 
-'''
-url="https://music.163.com/playlist?id=2584113381"
-html_str = parse_url(url)
-html_str_etree = etree.HTML(html_str)
-li_list_etree = html_str_etree.xpath("//ul[@class='f-hide']/li/a/text()")
-with open('2.html','w',encoding='utf-8') as f:
-    f.write(html_str)
-'''
-#‘https://music.163.com/discover/playlist/?order=hot&cat=%E5%8D%8E%E8%AF%AD&limit=35&offset=210’ 某类歌单页
-#https://music.163.com/discover/playlist/?order=hot&cat=华语&limit=35&offset=0
 
 class WyySpider:
     def __init__(self):
-        self.start_url = ""
-        self.song_sheet_page="https://music.163.com/discover/playlist/?order=hot&cat=华语&limit=35&offset=0"
-        self.url = "https://music.163.com/playlist?id=2498061427"  # 一个歌单的url
-        self.headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"}
+        """初始化"""
+        settings = Settings()
+        self.song_sheets_start_page = settings.song_sheets_start_page
+        self.song_sheets_format_page = settings.song_sheets_format_page
+        self.url = settings.url
+        self.headers = settings.headers
         self.mongo_db = MongoHelper(db="wangyiyun", collection="wyy")
 
     def parse_url(self, url):
+        """解析url返回html_str"""
         response = requests.get(url, headers=self.headers)
         return response.content.decode()
+    def get_sheets_page_list(self,html_start_page):
+        """
+        因为歌单列表页都是有规律的，所以根据此一次生成所有page页的url
+        :param html_start_page:
+        :return:
+        """
+        sheets_url_list=[]
+        start_page_etree = etree.HTML(html_start_page)
+        end_num = start_page_etree.xpath("//div[@id='m-pl-pager']//a[last()-1]/text()")[0]
+        end_num=int(end_num)
+        for n in range(1,end_num):
+            n=n*35
+            url = self.song_sheets_format_page.format(n)
+            print(url)
+            sheets_url_list.append(url)
+        return sheets_url_list
+    def get_sheet_list_url(self, html_str):
+        """
 
-    def get_song_sheet_list_url(self,html_str):
+        :param html_str: 歌单列表页的html
+        :return: 返回字典的列表，
+        """
+        sheet_list = []
         html_str_etree = etree.HTML(html_str)
-        item ={}
-        item["sheet_name"] = html_str_etree.xpath("//")
+        # print(html_str)
+        song_sheet_li_list = html_str_etree.xpath("//ul[@id='m-pl-container']/li")
+        for li in song_sheet_li_list:
+            item = {}
+            item["sheet_name"] = li.xpath(".//div/a[@class='msk']/@title")[0]
+            item["sheet_href"] = "https://music.163.com" + li.xpath(".//div/a[@class='msk']/@href")[0]
+            item["sheet_img"] = li.xpath(".//div/img[1]/@src")[0]
+            item["play_numbers"] = li.xpath(".//div/span[@class='nb']/text()")[0]
+            item["author"] = li.xpath(".//a[@class='nm nm-icn f-thide s-fc3']/@title")[0]
+            item["author_href"] = li.xpath(".//a[@class='nm nm-icn f-thide s-fc3']/@href")[0]
+            sheet_list.append(item)
+        return sheet_list
+
     def get_song_sheet(self, html_str):
+        """获取某个歌单信息"""
         html_str_etree = etree.HTML(html_str)
         item = {}
-        # item['song_sheet_description'] = html_str_etree.xpath("//meta[@name='description']/@content")[0]
-        # item['song_sheet_num'] = html_str_etree.xpath("//span[@id='playlist-track-count']/text()")[0]
-        # item['song_sheet'] = html_str_etree.xpath("//ul[@class='f-hide']/li/a/text()")
-        # item['song_sheet_href'] = html_str_etree.xpath("//ul[@class='f-hide']/li/a/@href")[0]
-        # item['song_sheet_tags'] = html_str_etree.xpath("//div[@class='tags f-cb']/a/i/text()")[0]
-        # item['song_sheet_tags_href'] = html_str_etree.xpath("//div[@class='tags f-cb']/a/@href")[0]
-        # item['song_sheet_save_num'] = html_str_etree.xpath("//a[@class='u-btni u-btni-fav ']/@data-count")[0]
-        # item['song_sheet_play_num'] = html_str_etree.xpath("//strong[@id='play-count']/text()")[0]
         item['歌单描述'] = html_str_etree.xpath("//meta[@name='description']/@content")[0].strip()
         item['作者'] = html_str_etree.xpath("//a[@class='u-btni u-btni-share ']/@data-res-author")[0].strip()
         item['歌曲数量'] = html_str_etree.xpath("//span[@id='playlist-track-count']/text()")[0].strip()
@@ -62,38 +80,47 @@ class WyySpider:
         item['收藏数'] = html_str_etree.xpath("//a[@class='u-btni u-btni-fav ']/@data-count")[0].strip()
         item['播放数'] = html_str_etree.xpath("//strong[@id='play-count']/text()")[0].strip()
         item['script_detail'] = html_str_etree.xpath("//script[@type='application/ld+json']/text()")[0].strip()
-
         ret = re.findall(r'.*<span id="cnt_comment_count">(\d+)</span>.*', html_str, re.S)
-        # print(ret)
-        # print(song_list)
-        # print(item['script_detail'])
-        tmp2 = item['script_detail']
-        # print(str(tmp2))
-        tmp2_dict = json.loads(tmp2)
         return item
 
     def save_json_data(self, json_data):
-        with open("1.json", "w", encoding="utf-8") as f:
+        """json数据存储"""
+        with open("1.json", "a", encoding="utf-8") as f:
             f.write(json.dumps(json_data, ensure_ascii=0, indent=2))
+    def save_txt(self, data):
+        with open("1.json","a",encoding="utf-8") as f:
+            f.write(data)
 
     def save_json_to_db(self, json_data):
+        """json数据存储到mongodb中"""
         self.mongo_db.insert_one(json_data)
         print("保存完毕")
 
     def db_find(self):
+        """查询数据"""
         print("查询所有...")
         self.mongo_db.find()
 
+
     def run(self):
-        html_str = self.parse_url(self.url)
-        song_sheet = self.get_song_sheet(html_str)
-        # self.save_json_data(song_sheet)
-        self.save_json_to_db(song_sheet)
+        """逻辑主函数"""
+        sheet_list_html_str = self.parse_url(self.song_sheets_start_page)
+        sheets_url_list = self.get_sheets_page_list(sheet_list_html_str)
+        print(sheets_url_list)
+        sheet_list = self.get_sheet_list_url(sheet_list_html_str)
+        # for sheet in sheet_list:
+        #     sheet_url = sheet["sheet_href"]
+        #     html_str = self.parse_url(sheet_url)
+        #     song_sheet = self.get_song_sheet(html_str)
+        #     print(song_sheet)
+            # self.save_json_data(song_sheet)
+            # self.save_txt(",\n")
+        # self.save_json_to_db(song_sheet)
 
 
 if __name__ == '__main__':
     wyy = WyySpider()
-    #wyy.run()
-    print(wyy.parse_url(wyy.song_sheet_page))
+    wyy.run()
+
     # wyy.save_json_to_db(data)
-    #wyy.db_find()
+    # wyy.db_find()
