@@ -15,28 +15,30 @@ class WyySpider:
         self.song_sheets_format_page = settings.song_sheets_format_page
         self.url = settings.url
         self.headers = settings.headers
+        self.save_path = settings.save_path
         self.mongo_db = MongoHelper(db="wangyiyun", collection="wyy")
 
     def parse_url(self, url):
         """解析url返回html_str"""
         response = requests.get(url, headers=self.headers)
         return response.content.decode()
-    def get_sheets_page_list(self,html_start_page):
+
+    def get_sheets_page_list(self, html_start_page):
         """
         因为歌单列表页都是有规律的，所以根据此一次生成所有page页的url
         :param html_start_page:
         :return:
         """
-        sheets_url_list=[]
+        sheets_url_list = []
         start_page_etree = etree.HTML(html_start_page)
         end_num = start_page_etree.xpath("//div[@id='m-pl-pager']//a[last()-1]/text()")[0]
-        end_num=int(end_num)
-        for n in range(1,end_num):
-            n=n*35
+        end_num = int(end_num)
+        for n in range(1, end_num):
+            n = n * 35
             url = self.song_sheets_format_page.format(n)
-            print(url)
             sheets_url_list.append(url)
         return sheets_url_list
+
     def get_sheet_list_url(self, html_str):
         """
 
@@ -63,6 +65,10 @@ class WyySpider:
         html_str_etree = etree.HTML(html_str)
         item = {}
         item['歌单描述'] = html_str_etree.xpath("//meta[@name='description']/@content")[0].strip()
+        item['歌单名'] = \
+        html_str_etree.xpath("//div[@id='content-operation']/a[@class='u-btni u-btni-share ']/@data-res-name")[
+            0].strip()
+        # print(item['歌单名'])
         item['作者'] = html_str_etree.xpath("//a[@class='u-btni u-btni-share ']/@data-res-author")[0].strip()
         item['歌曲数量'] = html_str_etree.xpath("//span[@id='playlist-track-count']/text()")[0].strip()
         song_name_tmp = html_str_etree.xpath("//ul[@class='f-hide']/li/a/text()")
@@ -85,10 +91,11 @@ class WyySpider:
 
     def save_json_data(self, json_data):
         """json数据存储"""
-        with open("1.json", "a", encoding="utf-8") as f:
+        with open(self.save_path + "1.json", "a", encoding="utf-8") as f:
             f.write(json.dumps(json_data, ensure_ascii=0, indent=2))
+
     def save_txt(self, data):
-        with open("1.json","a",encoding="utf-8") as f:
+        with open(self.save_path + "1.json", "a", encoding="utf-8") as f:
             f.write(data)
 
     def save_json_to_db(self, json_data):
@@ -101,21 +108,28 @@ class WyySpider:
         print("查询所有...")
         self.mongo_db.find()
 
-
     def run(self):
         """逻辑主函数"""
         sheet_list_html_str = self.parse_url(self.song_sheets_start_page)
-        sheets_url_list = self.get_sheets_page_list(sheet_list_html_str)
-        print(sheets_url_list)
         sheet_list = self.get_sheet_list_url(sheet_list_html_str)
-        # for sheet in sheet_list:
-        #     sheet_url = sheet["sheet_href"]
-        #     html_str = self.parse_url(sheet_url)
-        #     song_sheet = self.get_song_sheet(html_str)
-        #     print(song_sheet)
-            # self.save_json_data(song_sheet)
-            # self.save_txt(",\n")
-        # self.save_json_to_db(song_sheet)
+        for sheet in sheet_list:
+            sheet_url = sheet["sheet_href"]
+            html_str = self.parse_url(sheet_url)
+            song_sheet = self.get_song_sheet(html_str)
+            self.save_json_data(song_sheet)
+            self.save_txt(",\n")
+            # self.save_json_to_db(song_sheet)
+        sheets_url_list = self.get_sheets_page_list(sheet_list_html_str)
+        for next_sheets_url in sheets_url_list:
+            print("-" * 10 + ">", sheets_url_list.index(next_sheets_url), "<" + "-" * 10)
+            sheet_list_html_str = self.parse_url(next_sheets_url)
+            sheet_list = self.get_sheet_list_url(sheet_list_html_str)
+            for sheet in sheet_list:
+                sheet_url = sheet["sheet_href"]
+                html_str = self.parse_url(sheet_url)
+                song_sheet = self.get_song_sheet(html_str)
+                self.save_json_data(song_sheet)
+                self.save_txt(",\n")
 
 
 if __name__ == '__main__':

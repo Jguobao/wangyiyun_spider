@@ -12,3 +12,4 @@ class Settings:
         self.url = "https://music.163.com/playlist?id=2498061427"
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36"}
+        self.save_path= "/home/jgb/python/python_jgb/data/网易云spider/"
